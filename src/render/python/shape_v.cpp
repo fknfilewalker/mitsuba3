@@ -49,7 +49,7 @@ MI_PY_EXPORT(SilhouetteSample) {
         .def_repr(SilhouetteSample3f);
 
     MI_PY_DRJIT_STRUCT(ss, SilhouetteSample3f, p, discontinuity_type, n, uv,
-                       time, pdf, delta, d, silhouette_d, prim_index,
+                       time, pdf, delta, pidx, d, silhouette_d, prim_index,
                        scene_index, flags, projection_index, shape,
                        foreshortening, offset)
 }

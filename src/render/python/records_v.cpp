@@ -19,9 +19,10 @@ MI_PY_EXPORT(PositionSample) {
         .def_rw("time",   &PositionSample3f::time,   D(PositionSample, time))
         .def_rw("pdf",    &PositionSample3f::pdf,    D(PositionSample, pdf))
         .def_rw("delta",  &PositionSample3f::delta,  D(PositionSample, delta))
+        .def_rw("pidx",   &PositionSample3f::pidx,   D(PositionSample, pidx))
         .def_repr(PositionSample3f);
 
-    MI_PY_DRJIT_STRUCT(pos, PositionSample3f, p, n, uv, time, pdf, delta)
+    MI_PY_DRJIT_STRUCT(pos, PositionSample3f, p, n, uv, time, pdf, delta, pidx)
 }
 
 MI_PY_EXPORT(DirectionSample) {
@@ -42,5 +43,5 @@ MI_PY_EXPORT(DirectionSample) {
         .def_rw("emitter", &DirectionSample3f::emitter, D(DirectionSample, emitter))
         .def_repr(DirectionSample3f);
 
-    MI_PY_DRJIT_STRUCT(pos, DirectionSample3f, p, n, uv, time, pdf, delta, emitter, d, dist)
+    MI_PY_DRJIT_STRUCT(pos, DirectionSample3f, p, n, uv, time, pdf, delta, pidx, emitter, d, dist)
 }
