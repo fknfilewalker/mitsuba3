@@ -883,18 +883,18 @@ Mesh<Float, Spectrum>::sample_position(Float time, const Point2f &sample_, Mask 
     ps.pdf   = m_area_pmf.normalization();
     ps.delta = false;
     ps.pidx = face_idx;
-    ps.uv = b;
+    ps.buv = b;
 
-    // if (has_vertex_texcoords()) {
-    //     Point2f uv0 = vertex_texcoord(fi[0], active),
-    //             uv1 = vertex_texcoord(fi[1], active),
-    //             uv2 = vertex_texcoord(fi[2], active);
+    if (has_vertex_texcoords()) {
+        Point2f uv0 = vertex_texcoord(fi[0], active),
+                uv1 = vertex_texcoord(fi[1], active),
+                uv2 = vertex_texcoord(fi[2], active);
 
-    //     ps.uv = dr::fmadd(uv0, (1.f - b.x() - b.y()),
-    //                       dr::fmadd(uv1, b.x(), uv2 * b.y()));
-    // } else {
-    //     ps.uv = b;
-    // }
+        ps.uv = dr::fmadd(uv0, (1.f - b.x() - b.y()),
+                          dr::fmadd(uv1, b.x(), uv2 * b.y()));
+    } else {
+        ps.uv = b;
+    }
 
     if (has_vertex_normals()) {
         Normal3f n0 = vertex_normal(fi[0], active),
@@ -1573,6 +1573,8 @@ Mesh<Float, Spectrum>::compute_surface_interaction(const Ray3f &ray,
 
     // Texture coordinates (if available)
     si.uv = Point2f(b1, b2);
+
+    si.buv = Point2f(b1, b2);
 
     std::tie(si.dp_du, si.dp_dv) = coordinate_system(si.n);
 

@@ -60,8 +60,10 @@ struct PositionSample {
     /// Set if the sample was drawn from a degenerate (Dirac delta) distribution
     Mask delta;
 
-    /// my implementation: get the prim_index of the sampled position
+    /// my implementation: get the prim_index and the barycentric uv of the sample
     Index pidx;
+
+    Point2f buv;
 
     //! @}
     // =============================================================
@@ -79,17 +81,17 @@ struct PositionSample {
      */
     PositionSample(const SurfaceInteraction3f &si)
         : p(si.p), n(si.sh_frame.n), uv(si.uv), time(si.time), pdf(0.f),
-          delta(false), pidx(0) { }
+          delta(false), pidx(0), buv(0) { }
 
     /// Basic field constructor
     PositionSample(const Point3f &p, const Normal3f &n, const Point2f &uv,
-                   Float time, Float pdf, Mask delta, Float _prim_index = 0)
-        : p(p), n(n), uv(uv), time(time), pdf(pdf), delta(delta), pidx(_prim_index) { }
+                   Float time, Float pdf, Mask delta, Float _prim_index = 0, Point2f _buv = Point2f(0, 0))
+        : p(p), n(n), uv(uv), time(time), pdf(pdf), delta(delta), pidx(_prim_index), buv(_buv) { }
 
     //! @}
     // =============================================================
 
-    DRJIT_STRUCT(PositionSample, p, n, uv, time, pdf, delta, pidx)
+    DRJIT_STRUCT(PositionSample, p, n, uv, time, pdf, delta, pidx, buv)
 };
 
 // -----------------------------------------------------------------------------
@@ -118,7 +120,7 @@ struct DirectionSample : public PositionSample<Float_, Spectrum_> {
     using Float    = Float_;
     using Spectrum = Spectrum_;
 
-    MI_IMPORT_BASE(PositionSample, p, n, uv, time, pdf, delta, pidx)
+    MI_IMPORT_BASE(PositionSample, p, n, uv, time, pdf, delta, pidx, buv)
     MI_IMPORT_RENDER_BASIC_TYPES()
 
     using Interaction3f        = typename RenderAliases::Interaction3f;
@@ -201,7 +203,7 @@ struct DirectionSample : public PositionSample<Float_, Spectrum_> {
     //! @}
     // =============================================================
 
-    DRJIT_STRUCT(DirectionSample, p, n, uv, time, pdf, delta, pidx, d, dist, emitter)
+    DRJIT_STRUCT(DirectionSample, p, n, uv, time, pdf, delta, pidx, buv, d, dist, emitter)
 };
 
 // -----------------------------------------------------------------------------
@@ -217,6 +219,7 @@ std::ostream &operator<<(std::ostream &os,
        << "  pdf = " << ps.pdf << "," << std::endl
        << "  delta = " << ps.delta << "," << std::endl
        << "  pidx = " << ps.pidx << std::endl
+       << "  buv = " << ps.buv
        <<  "]";
     return os;
 }
@@ -232,6 +235,7 @@ std::ostream &operator<<(std::ostream &os,
        << "  pdf = " << ds.pdf << "," << std::endl
        << "  delta = " << ds.delta << "," << std::endl
        << "  pidx = " << ds.pidx << "," << std::endl
+       << "  buv = " << ds.buv << "," << std::endl
        << "  emitter = " << string::indent(ds.emitter) << "," << std::endl
        << "  d = " << string::indent(ds.d, 6) << "," << std::endl
        << "  dist = " << ds.dist << std::endl

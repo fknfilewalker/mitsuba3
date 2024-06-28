@@ -207,6 +207,9 @@ struct SurfaceInteraction : Interaction<Float_, Spectrum_> {
     /// UV surface coordinates
     Point2f uv;
 
+    // my implementation: store the barycentric coordinates of the intersection
+    Point2f buv;
+
     /// Shading frame
     Frame3f sh_frame;
 
@@ -244,7 +247,7 @@ struct SurfaceInteraction : Interaction<Float_, Spectrum_> {
      */
     explicit SurfaceInteraction(const PositionSample3f &ps,
                                 const Wavelength &wavelengths)
-        : Base(0.f, ps.time, wavelengths, ps.p, ps.n), uv(ps.uv),
+        : Base(0.f, ps.time, wavelengths, ps.p, ps.n), uv(ps.uv), buv(0),
           sh_frame(Frame3f(ps.n)), dp_du(0), dp_dv(0), dn_du(0), dn_dv(0),
           duv_dx(0), duv_dy(0), wi(0), prim_index(0) {}
 
@@ -524,7 +527,7 @@ struct SurfaceInteraction : Interaction<Float_, Spectrum_> {
     //! @}
     // =============================================================
 
-    DRJIT_STRUCT(SurfaceInteraction, t, time, wavelengths, p, n, shape, uv,
+    DRJIT_STRUCT(SurfaceInteraction, t, time, wavelengths, p, n, shape, uv, buv,
                  sh_frame, dp_du, dp_dv, dn_du, dn_dv, duv_dx,
                  duv_dy, wi, prim_index, instance)
 };
@@ -773,6 +776,7 @@ std::ostream &operator<<(std::ostream &os, const SurfaceInteraction<Float, Spect
            << "  p = " << string::indent(it.p, 6) << "," << std::endl
            << "  shape = " << string::indent(it.shape, 2) << "," << std::endl
            << "  uv = " << string::indent(it.uv, 7) << "," << std::endl
+           << "  buv = " << string::indent(it.buv, 7) << "," << std::endl
            << "  n = " << string::indent(it.n, 6) << "," << std::endl
            << "  sh_frame = " << string::indent(it.sh_frame, 2) << "," << std::endl
            << "  dp_du = " << string::indent(it.dp_du, 10) << "," << std::endl
