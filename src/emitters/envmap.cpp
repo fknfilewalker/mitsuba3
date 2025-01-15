@@ -439,6 +439,8 @@ public:
         ds.p       = it.p + d * dist;
         ds.n       = -d;
         ds.uv      = uv;
+        ds.pidx    = 0;
+        ds.buv     = uv;
         ds.time    = it.time;
         ds.pdf     = dr::select(
             active,
