@@ -463,14 +463,14 @@ public:
                 (dr::squared_norm(dc_dv) - correction) * rad_vec -
                 (dr_dv * radius) * dc_dv
             );
-            Frame3f frame(n);
 
-            /* Because of backface culling, we only consider the set of
-             * tangential direcitons in the hemisphere which is pointing In
-             * the same direction as the surface normal */
-            Vector3f local_d = warp::square_to_uniform_hemisphere(
+            /* Sample the full sphere of tangential directions. The open
+             * boundary ring is a true silhouette edge, so (just like the disk's
+             * and cylinder's perimeters) directions in both hemispheres can
+             * produce a visibility discontinuity; restricting to a single
+             * hemisphere drops part of the tip gradients. */
+            ss.d = warp::square_to_uniform_sphere(
                 Point2f(sample.y(), sample.z()));
-            ss.d = frame.to_world(-local_d);
 
             /// Fill other fields
             ss.discontinuity_type = (uint32_t) DiscontinuityFlags::PerimeterType;
@@ -487,7 +487,7 @@ public:
             dr::masked(ss.n, dr::dot(inward_dir, ss.n) > 0.f) *= -1.f;
 
             ss.pdf = dr::rcp(dr::TwoPi<Float> * radius * (2 * curve_count));
-            ss.pdf *= warp::square_to_uniform_hemisphere_pdf(local_d);
+            ss.pdf *= warp::square_to_uniform_sphere_pdf(ss.d);
             ss.foreshortening = dr::norm(dr::cross(ss.d, ss.silhouette_d));
         } else if (has_flag(flags, DiscontinuityFlags::InteriorType)) {
             /// Sample a point on the shape surface
@@ -556,23 +556,9 @@ public:
         sample_perimeter.x() =
             (sample_perimeter.x() + curve_idx) / Float(curve_count);
 
-        Point3f c;
-        Vector3f dc_dv, dc_dvv;
-        Float radius, dr_dv;
-        std::tie(c, dc_dv, dc_dvv, std::ignore, radius, dr_dv, std::ignore) =
-            cubic_interpolation(local_v, ss.prim_index, active);
-
-        Vector3f rad_vec = ss.p - c;
-        Float correction = dr::dot(rad_vec, dc_dvv);  // curvature correction
-        Normal3f n = dr::normalize(
-            (dr::squared_norm(dc_dv) - correction) * rad_vec -
-            (dr_dv * radius) * dc_dv
-        );
-        Frame3f frame(n);
-        Vector3f local_d = -frame.to_local(ss.d);
-
-        sample_perimeter.y() = warp::uniform_hemisphere_to_square(local_d).x();
-        sample_perimeter.z() = warp::uniform_hemisphere_to_square(local_d).y();
+        Point2f sample_d = warp::uniform_sphere_to_square(ss.d);
+        sample_perimeter.y() = sample_d.x();
+        sample_perimeter.z() = sample_d.y();
 
         /// Invert interior type samples
         Point3f sample_interior = dr::zeros<Point3f>(dr::width(ss));
@@ -603,6 +589,7 @@ public:
 
             size_t segment_count = dr::width(m_indices);
             UInt32 segment_id = dr::floor2int<UInt32>(uv.y() * segment_count);
+            segment_id = dr::clip(segment_id, 0, (uint32_t) segment_count - 1); // In case uv.y() == 1
             Float v_local = uv.y() * segment_count - segment_id;
 
             Point3f C;
@@ -687,6 +674,15 @@ public:
                 (dr_dv * radius) * dc_dv);
             Mask success = dr::dot(n, ss.d) < 0;
 
+            // `ss.n` must point outwards from the curve (consistent with
+            // `sample_silhouette`). Without this, the cross product above leaves
+            // the perimeter normal's sign to chance, flipping the gradients at
+            // the curve tips.
+            Vector3f inward_dir = -n;
+            dr::masked(ss.n, dr::dot(inward_dir, ss.n) > 0.f) *= -1.f;
+            inward_dir = dc_dv * dr::select(local_v == 0.f, 1.f, -1.f);
+            dr::masked(ss.n, dr::dot(inward_dir, ss.n) > 0.f) *= -1.f;
+
             ss.discontinuity_type =
                 dr::select(success,
                            (uint32_t) DiscontinuityFlags::PerimeterType,
@@ -694,6 +690,7 @@ public:
         } else if (has_flag(flags, DiscontinuityFlags::InteriorType)) {
             size_t segment_count = dr::width(m_indices);
             UInt32 segment_id = dr::floor2int<UInt32>(si.uv.y() * segment_count);
+            segment_id = dr::clip(segment_id, 0, (uint32_t) segment_count - 1); // In case si.uv.y() == 1
             Float v_local = si.uv.y() * segment_count - segment_id;
 
             Point3f c;
@@ -941,7 +938,7 @@ public:
                    then compute the corresponding point along the ray. (Instead
                    of computing an intersection with the curve, we compute an
                    intersection with the tangent plane.) */
-                Vector3f rad_vec_diff = si.p - c;
+                Vector3f rad_vec_diff = p - c;
                 rad_vec = dr::replace_grad(rad_vec, rad_vec_diff);
 
                 // Differentiable tangent plane normal
@@ -1161,15 +1158,20 @@ private:
      */
     std::tuple<Vector3f, Vector3f, Vector3f, Vector3f, Float, Float, Float>
     partials(Point2f uv, Mask active) const {
-        /* To compute the partial devriatives of a point on the curve and of its
-           normal, we start by building the Frenet-Serret (TNB) frame. From the
-           frame we can compute the curves' first and second fundamental forms.
-           Finally, these are then used in the Weingarten equations to get the
-           normal's partials.
-         */
+        /* To compute the partial derivatives of a point on the curve and of its
+           normal, we build the surface normal from the Frenet-Serret normal and
+           the radial direction. The radial direction is anchored to the
+           consistent `local_frame`, so its derivatives along `v` are taken from
+           that frame (see `local_frame_derivatives`) rather than from the Frenet
+           torsion: the torsion depends on the discontinuous third derivative and
+           would otherwise inject spurious gradients at the segment borders.
+           Together with the position partials these give the first and second
+           fundamental forms, which feed the Weingarten equations for the
+           normal's partials. */
         Float v_global = uv.y();
         size_t segment_count = dr::width(m_indices);
         UInt32 segment_idx = dr::floor2int<UInt32>(v_global * segment_count);
+        segment_idx = dr::clip(segment_idx, 0, (uint32_t) segment_count - 1); // In case v_global == 1
         Float v_local = v_global * segment_count - segment_idx;
 
         Point3f c;
@@ -1180,46 +1182,38 @@ private:
 
         // Frenet-Serret (TNB) frame
         Float norm_dc_dv = dr::norm(dc_dv);
-        Vector3f cross_dc_dv_dc_dvv = dr::cross(dc_dv, dc_dvv),
-                 dc_dv_normalized = dc_dv / norm_dc_dv;
+        Vector3f cross_dc_dv_dc_dvv = dr::cross(dc_dv, dc_dvv);
         Float sqr_norm_dc_dv = dr::square(norm_dc_dv),
               norm_cross_dc_dv_dc_dvv = dr::norm(cross_dc_dv_dc_dvv),
-              kappa = norm_cross_dc_dv_dc_dvv / (norm_dc_dv * sqr_norm_dc_dv),
-              tau = dr::dot(dc_dvvv, cross_dc_dv_dc_dvv) / dr::square(norm_cross_dc_dv_dc_dvv);
-
-        dr::masked(tau, norm_cross_dc_dv_dc_dvv < 1e-6f) = 0.f;  // Numerical stability
-        dr::masked(tau, dr::norm(dc_dvvv) < 1e-6f) = 0.f;
+              kappa = norm_cross_dc_dv_dc_dvv / (norm_dc_dv * sqr_norm_dc_dv);
 
         Vector3f frame_t = dc_dv / norm_dc_dv,
-                 frame_n = dr::normalize(dr::cross(cross_dc_dv_dc_dvv, dc_dv)),
-                 frame_b = dr::normalize(dr::cross(frame_t, frame_n));
+                 frame_n = dr::normalize(dr::cross(cross_dc_dv_dc_dvv, dc_dv));
 
-        // Degenerated TNB frame
+        // Degenerated TNB frame: `frame_n` is ill-defined where the curvature
+        // vanishes, fall back to an arbitrary consistent normal.
         Mask degenerate = kappa < dr::Epsilon<Float>;
         dr::masked(kappa, degenerate) = 0.f;
-        dr::masked(tau, degenerate) = 0.f;
         Normal3f Tn(frame_t);
         Frame3f frame(Tn);
         dr::masked(frame_n, degenerate) = frame.s;
-        dr::masked(frame_b, degenerate) = frame.t;
 
-        // Consistent local frame
-        auto [dir_rot, dir_rad] = local_frame(dc_dv_normalized);
+        // Consistent local frame and its derivatives w.r.t. local `v`
+        auto [dir_rot, dir_rad, dir_rot_dv, dir_rad_dv, dir_rot_dvv,
+              dir_rad_dvv] = local_frame_derivatives(dc_dv, dc_dvv, dc_dvvv);
         auto [s_, c_] = dr::sincos(uv.x() * dr::TwoPi<Float>);
         Vector3f rad = c_ * dir_rad + s_ * dir_rot;
-        Float cos_theta_u = dr::dot(frame_n, rad),
-              sin_theta_u = dr::dot(frame_b, rad);
+        Float cos_theta_u = dr::dot(frame_n, rad);
         Normal3f n = dr::normalize(
             norm_dc_dv * (1.f - radius * kappa * cos_theta_u) * rad - dr_dv * frame_t);
 
-        // Position partials
-        Vector3f radu  = -sin_theta_u * frame_n + cos_theta_u * frame_b,
-                 radv  = norm_dc_dv * cos_theta_u * (-kappa * frame_t + tau * frame_b) +
-                         norm_dc_dv * sin_theta_u * (-tau * frame_n),
-                 radvv = sqr_norm_dc_dv * cos_theta_u * (-kappa * kappa - tau * tau) * frame_n +
-                         sqr_norm_dc_dv * sin_theta_u * (kappa * tau * frame_t - tau * tau * frame_b),
-                 raduv = -norm_dc_dv * sin_theta_u * (-kappa * frame_t + tau * frame_b) +
-                          norm_dc_dv * cos_theta_u * (-tau * frame_n);
+        // Position partials. The radial vector is anchored to `local_frame`, so
+        // its `v`-derivatives follow that frame (continuous across knots) rather
+        // than the Frenet frame's torsion.
+        Vector3f radu  = -s_ * dir_rad + c_ * dir_rot,
+                 radv  =  c_ * dir_rad_dv + s_ * dir_rot_dv,
+                 radvv =  c_ * dir_rad_dvv + s_ * dir_rot_dvv,
+                 raduv = -s_ * dir_rad_dv + c_ * dir_rot_dv;
         Vector3f dp_du  = radius * radu,
                  dp_dv  = dc_dv + dr_dv * rad + radius * radv,
                  dp_duu = -radius * rad,
@@ -1266,6 +1260,66 @@ private:
         Vector3f v_rad = dr::cross(v_rot, dc_dv_normalized);
 
         return { v_rot, v_rad };
+    }
+
+    /**
+     * \brief Frame vectors of \ref local_frame together with their first and
+     * second derivatives w.r.t. the local curve parameter \c v.
+     *
+     * The frame is defined by projecting a fixed guide vector onto the plane
+     * orthogonal to the tangent, so its derivatives can be computed analytically
+     * from the tangent's derivatives. Unlike a Frenet-Serret frame, the
+     * first-order derivatives depend only on \c dc_dv and \c dc_dvv and are
+     * therefore continuous across segment borders (a Frenet frame would inject
+     * the torsion, which depends on the discontinuous third derivative
+     * \c dc_dvvv and produces spurious gradients at the knots).
+     */
+    std::tuple<Vector3f, Vector3f, Vector3f, Vector3f, Vector3f, Vector3f>
+    local_frame_derivatives(const Vector3f &dc_dv, const Vector3f &dc_dvv,
+                            const Vector3f &dc_dvvv) const {
+        Vector3f guide = Vector3f(0, 0, 1);
+
+        // Unit tangent and its first/second derivatives (w.r.t. local `v`)
+        Float s = dr::norm(dc_dv);
+        Vector3f T = dc_dv / s;
+        Float m1 = dr::dot(T, dc_dvv);
+        Vector3f t_dv = (dc_dvv - m1 * T) / s;
+        Float m1_dv = dr::dot(t_dv, dc_dvv) + dr::dot(T, dc_dvvv);
+        Vector3f t_dvv = (dc_dvvv - m1_dv * T - 2.f * m1 * t_dv) / s;
+
+        // Rotation axis `v_rot = normalize(guide - T (T . guide))`
+        Float a = dr::dot(T, guide), a_dv = dr::dot(t_dv, guide),
+              a_dvv = dr::dot(t_dvv, guide);
+        Vector3f w     = guide - a * T,
+                 w_dv  = -a_dv * T - a * t_dv,
+                 w_dvv = -a_dvv * T - 2.f * a_dv * t_dv - a * t_dvv;
+        Float nw = dr::norm(w);
+        Vector3f v_rot = w / nw;
+        Float nw_dv = dr::dot(w, w_dv) / nw;
+        Vector3f v_rot_dv = (w_dv - v_rot * dr::dot(v_rot, w_dv)) / nw;
+        Float dvw    = dr::dot(v_rot, w_dv),
+              dvw_dv = dr::dot(v_rot_dv, w_dv) + dr::dot(v_rot, w_dvv);
+        Vector3f num_dv = w_dvv - v_rot_dv * dvw - v_rot * dvw_dv;
+        Vector3f v_rot_dvv = num_dv / nw - v_rot_dv * (nw_dv / nw);
+
+        // Radial axis `v_rad = cross(v_rot, T)`
+        Vector3f v_rad     = dr::cross(v_rot, T),
+                 v_rad_dv  = dr::cross(v_rot_dv, T) + dr::cross(v_rot, t_dv),
+                 v_rad_dvv = dr::cross(v_rot_dvv, T) +
+                             2.f * dr::cross(v_rot_dv, t_dv) +
+                             dr::cross(v_rot, t_dvv);
+
+        // Match `local_frame`'s singular handling (tangent (anti-)parallel to
+        // the guide) and keep the derivatives finite there.
+        Mask singular = nw < 1e-6f;
+        dr::masked(v_rot, singular) = Vector3f(0, 1, 0);
+        dr::masked(v_rad, singular) = dr::cross(Vector3f(0, 1, 0), T);
+        dr::masked(v_rot_dv, singular)  = 0.f;
+        dr::masked(v_rad_dv, singular)  = 0.f;
+        dr::masked(v_rot_dvv, singular) = 0.f;
+        dr::masked(v_rad_dvv, singular) = 0.f;
+
+        return { v_rot, v_rad, v_rot_dv, v_rad_dv, v_rot_dvv, v_rad_dvv };
     }
 
 private:

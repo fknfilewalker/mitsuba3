@@ -215,3 +215,76 @@ def test10_shape_type(variant_scalar_rgb):
         "filename" : "resources/data/common/meshes/curve_6.txt",
     })
     assert curve.shape_type() == mi.ShapeType.LinearCurve.value;
+
+
+def _write_linearcurve(cps):
+    import os, tempfile
+    tmp = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False)
+    tmp.write("".join("%f %f %f %f\n" % tuple(p) for p in cps))
+    tmp.close()
+    return tmp.name
+
+
+# A wiggly, varying-radius, non-planar curve exercising the cone tilt and the
+# (u, v) parameterization of the round-cone body.
+_LC_CPS = [
+    (-0.8,  0.3,  0.0, 0.15),
+    (-0.2, -0.3,  0.2, 0.10),
+    ( 0.4,  0.2, -0.1, 0.20),
+    ( 0.9,  0.5,  0.1, 0.12),
+]
+
+
+def test11_partials_fd(variant_llvm_ad_rgb):
+    # Validate dp_du / dp_dv / dn_du / dn_dv of the cone body against finite
+    # differences of `eval_parameterization`, away from segment borders.
+    import os
+    path = _write_linearcurve(_LC_CPS)
+    curve = mi.load_dict({"type": "linearcurve", "filename": path})
+    os.unlink(path)
+    n_seg = len(_LC_CPS) - 1
+    flags = mi.RayFlags.All | mi.RayFlags.dPdUV | mi.RayFlags.dNSdUV
+    ep = lambda u, v: curve.eval_parameterization(mi.Point2f(u, v), flags)
+
+    eps = 1e-4
+    u, v = dr.meshgrid(dr.linspace(mi.Float, 0.05, 0.95, 9),
+                       dr.linspace(mi.Float, 0.02, 0.98, 40))
+    si, su, sv = ep(u, v), ep(u + eps, v), ep(u, v + eps)
+    m = (si.is_valid() & su.is_valid() & sv.is_valid() &
+         (dr.abs(v * n_seg - dr.round(v * n_seg)) > 1e-2))
+
+    def close(a, b):
+        d = dr.norm(a - b)
+        return dr.all(dr.select(m, d, 0.0) <= 3e-2)
+
+    assert close((su.p - si.p) / eps, si.dp_du)
+    assert close((sv.p - si.p) / eps, si.dp_dv)
+    assert close((su.n - si.n) / eps, si.dn_du)
+    assert close((sv.n - si.n) / eps, si.dn_dv)
+
+
+def test12_interior_silhouette(variant_llvm_ad_rgb):
+    # The projected smooth silhouette must have a normal perpendicular to the
+    # view direction, and `sample_silhouette` must be bijective with its inverse.
+    import os
+    path = _write_linearcurve(_LC_CPS)
+    curve = mi.load_dict({"type": "linearcurve", "filename": path})
+    os.unlink(path)
+    vp = mi.Point3f(0, 0, 4)
+
+    u, v = dr.meshgrid(dr.linspace(mi.Float, 1e-3, 1 - 1e-3, 48),
+                       dr.linspace(mi.Float, 1e-3, 1 - 1e-3, 48))
+    si = curve.eval_parameterization(mi.Point2f(u, v), mi.RayFlags.All)
+    ss = curve.primitive_silhouette_projection(
+        vp, si, mi.DiscontinuityFlags.InteriorType.value, 0.0, si.is_valid())
+    proj = si.is_valid() & ss.is_valid()
+    assert dr.count(proj) > 0
+    # Projected silhouette normal is perpendicular to the view direction
+    assert dr.all(dr.select(proj, dr.abs(dr.dot(ss.n, ss.d)), 0.0) < 1e-4)
+
+    x = dr.linspace(mi.Float, 1e-3, 1 - 1e-3, 12)
+    s = mi.Point3f(*dr.meshgrid(x, x, x))
+    ss2 = curve.sample_silhouette(s, mi.DiscontinuityFlags.InteriorType.value)
+    inv = curve.invert_silhouette_sample(ss2)
+    assert dr.allclose(inv, s, atol=1e-5)
+    assert dr.all(dr.abs(dr.dot(ss2.n, ss2.d)) < 1e-5)

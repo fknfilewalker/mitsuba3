@@ -334,7 +334,9 @@ def test12_sample_silhouette_perimeter(variants_vec_rgb):
     assert dr.allclose(dr.abs(ss.p.x), length/2)
     assert dr.allclose(dr.norm(mi.Point2f(ss.p.y, ss.p.z)), 1)
     assert dr.allclose(dr.dot(ss.n, ss.d), 0, atol=1e-6)
-    assert dr.allclose(ss.pdf, dr.inv_four_pi * dr.inv_two_pi, atol=1e-6)
+    # Spatial pdf 1/(2*pi*radius * 2*curve_count) = inv_four_pi (radius=1), times
+    # the full-sphere direction pdf inv_four_pi.
+    assert dr.allclose(ss.pdf, dr.inv_four_pi * dr.inv_four_pi, atol=1e-6)
     assert (dr.reinterpret_array(mi.UInt32, ss.shape) ==
             dr.reinterpret_array(mi.UInt32, curve_ptr))
 
@@ -562,3 +564,69 @@ def test21_shape_type(variant_scalar_rgb):
         "filename" : "resources/data/common/meshes/curve.txt",
     })
     assert curve.shape_type() == mi.ShapeType.BSplineCurve.value;
+
+
+def _write_curve(cps):
+    import os, tempfile
+    tmp = tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False)
+    tmp.write("".join("%f %f %f %f\n" % p for p in cps))
+    tmp.close()
+    return tmp.name
+
+
+def test22_partials_curved(variant_scalar_rgb):
+    # The bundled `curve.txt` is a straight, single-segment curve (zero curvature
+    # and torsion), so it exercises neither the radial-frame derivatives in
+    # `partials()` nor any segment border. Use a wiggly, non-planar,
+    # multi-segment curve to (a) validate dp_du/dp_dv/dn_du/dn_dv against finite
+    # differences and (b) check that the position partials stay *continuous*
+    # across segment borders -- the previous Frenet/torsion formula made them
+    # jump there (the third derivative `dc_dvvv` is discontinuous at knots).
+    import os
+    cps = [
+        (-1.0, -0.5,  0.0, 0.3),
+        (-0.6,  0.3,  0.2, 0.3),
+        (-0.2, -0.2, -0.3, 0.3),
+        ( 0.2,  0.4,  0.3, 0.3),
+        ( 0.6, -0.3, -0.2, 0.3),
+        ( 1.0,  0.2,  0.1, 0.3),
+    ]
+    path = _write_curve(cps)
+    curve = mi.load_dict({"type": "bsplinecurve", "filename": path})
+    os.unlink(path)
+
+    n_seg = len(cps) - 3   # cubic B-spline: #segments = #control_points - 3
+    assert curve.primitive_count() == n_seg
+
+    flags = mi.RayFlags.All | mi.RayFlags.dPdUV | mi.RayFlags.dNSdUV
+
+    def ep(u, v):
+        return curve.eval_parameterization(mi.Point2f(u, v), flags)
+
+    eps = 1e-4
+
+    # (a) Finite-difference validation of the partials, away from the knots
+    #     (where the *second* fundamental form genuinely has a curvature kink).
+    for u in dr.linspace(Float, 0.05, 0.95, 7):
+        for v in dr.linspace(Float, 0.01, 0.99, 41):
+            if abs(v * n_seg - round(v * n_seg)) < 1e-2:
+                continue
+            si = ep(u, v)
+            if not si.is_valid():
+                continue
+            si_u, si_v = ep(u + eps, v), ep(u, v + eps)
+            if si_u.is_valid():
+                assert dr.allclose((si_u.p - si.p) / eps, si.dp_du, atol=5e-2)
+                assert dr.allclose((si_u.n - si.n) / eps, si.dn_du, atol=5e-2)
+            if si_v.is_valid():
+                assert dr.allclose((si_v.p - si.p) / eps, si.dp_dv, atol=5e-2)
+                assert dr.allclose((si_v.n - si.n) / eps, si.dn_dv, atol=5e-2)
+
+    # (b) Continuity of the position partials across each segment border.
+    delta = 1e-4
+    for k in range(1, n_seg):
+        vk = k / n_seg
+        for u in dr.linspace(Float, 0.05, 0.95, 8):
+            lo, hi = ep(u, vk - delta), ep(u, vk + delta)
+            if lo.is_valid() and hi.is_valid():
+                assert dr.allclose(lo.dp_dv, hi.dp_dv, atol=5e-2)

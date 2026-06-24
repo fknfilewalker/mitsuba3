@@ -473,23 +473,18 @@ class PathProjectiveIntegrator(PSIntegrator):
 
         # ----------- Estimate the radiance of the foreground -----------
 
-        # Create a preliminary intersection point
-        pi_fg = dr.zeros(mi.PreliminaryIntersection3f)
-        pi_fg.valid = active
-        pi_fg.t = 1
-        pi_fg.prim_index = ss.prim_index
-        pi_fg.prim_uv = ss.uv
-        pi_fg.shape = ss.shape
-
-        # Create a dummy ray that we never perform ray-intersection with to
-        # compute other fields in ``si``
-        dummy_ray = mi.Ray3f(ss.p - ss.d, ss.d)
+        # Reconstruct the foreground surface interaction from the silhouette
+        # parameterization. ``eval_parameterization`` maps ``ss.uv`` to a
+        # surface interaction consistently with each shape's UV convention.
+        # Feeding ``ss.uv`` into ``pi.prim_uv`` directly would be wrong for
+        # shapes whose texture UV differs from the primitive UV (e.g. curves,
+        # where ``ss.uv.x`` is the azimuth but ``prim_uv.x`` is the segment
+        # parameter), placing the foreground point -- and hence its
+        # normal/radiance -- at the wrong location.
         ray_bg.wavelengths = wavelengths
-
-        # The ray origin is wrong, but this is fine if we only need the primal
-        # radiance
-        si_fg = pi_fg.compute_surface_interaction(
-            dummy_ray, mi.RayFlags.All, active)
+        si_fg = ss.shape.eval_parameterization(
+            ss.uv, mi.RayFlags.All, active)
+        si_fg.wavelengths = wavelengths
 
         # If smooth normals are used, it is possible that the computed
         # shading normal near visibility silhouette points to the wrong side

@@ -429,7 +429,11 @@ build_impl(const std::vector<BlasEntry> &blases,
                                                           ? MTLCurveBasisBSpline
                                                           : MTLCurveBasisLinear;
                         gd.curveType                = MTLCurveTypeRound;
-                        gd.curveEndCaps             = MTLCurveEndCapsSphere;
+                        // Match Embree/OptiX: B-spline curves are open-ended
+                        // (no caps), linear curves have spherical caps/joints.
+                        gd.curveEndCaps             = bspline
+                                                          ? MTLCurveEndCapsNone
+                                                          : MTLCurveEndCapsSphere;
                         gd.opaque                   = YES;
                         [geoms addObject: gd];
 
