@@ -418,6 +418,7 @@ public:
         m_indices = dr::load<UInt32Storage>(indices.data(), indices.size());
         m_curves_prim_idx = dr::load<UInt32Storage>(curves_1st_prim_idx.data(),
                                                     curves_1st_prim_idx.size());
+        m_seg_count_f = dr::opaque<Float>((ScalarFloat) indices.size());
 
         recompute_bbox();
 
@@ -436,10 +437,12 @@ public:
     }
 
     void parameters_changed(const std::vector<std::string> &keys) override {
-        if (keys.empty() || string::contains(keys, "control_points")) {
+        bool cps_changed = keys.empty() || string::contains(keys, "control_points");
+        if (cps_changed)
             recompute_bbox();
+        if (cps_changed || string::contains(keys, "segment_indices"))
             mark_dirty();
-        }
+        m_seg_count_f = dr::opaque<Float>((ScalarFloat) dr::width(m_indices));
         Base::parameters_changed();
     }
 
@@ -457,9 +460,10 @@ public:
 
         // Convert global v to segment-local v
         Float v_global = uv.y();
-        size_t segment_count = dr::width(m_indices);
+        Float segment_count = m_seg_count_f;
         UInt32 segment_idx = dr::floor2int<UInt32>(v_global * segment_count);
-        segment_idx = dr::clip(segment_idx, 0, (uint32_t) segment_count - 1); // In case v_global == 1
+        // In case v_global == 1
+        segment_idx = dr::minimum(segment_idx, UInt32(segment_count) - 1u);
         Float v_local = v_global * segment_count - segment_idx;
 
         pi.prim_uv.x() = v_local;
@@ -532,7 +536,7 @@ public:
             ss.prim_index =
                 dr::select(use_first, first_segment_idx, last_segment_idx);
             ss.uv = Point2f(local_uv.x(),
-                            (local_uv.y() + ss.prim_index) / dr::width(m_indices));
+                            (local_uv.y() + ss.prim_index) / m_seg_count_f);
 
             // map UV parameterization to point on surface
             Point3f c;
@@ -638,7 +642,7 @@ public:
         );
         curve_idx -= 1;
 
-        size_t segment_count = dr::width(m_indices);
+        Float segment_count = m_seg_count_f;
         Float local_v = ss.uv.y() * segment_count - ss.prim_index;
 
         sample_perimeter.x() = dr::select(
@@ -694,7 +698,7 @@ public:
         } else {
             Point2f uv = dr::detach(si.uv);
 
-            size_t segment_count = dr::width(m_indices);
+            Float segment_count = m_seg_count_f;
             UInt32 segment_id = dr::floor2int<UInt32>(uv.y() * segment_count);
             Float v_local = uv.y() * segment_count - segment_id;
 
@@ -742,7 +746,7 @@ public:
             UInt32 last_segment_idx =
                 dr::gather<UInt32>(m_curves_prim_idx, curve_idx + 1, active) - 1;
 
-            size_t segment_count = dr::width(m_indices);
+            Float segment_count = m_seg_count_f;
             Float local_v = si.uv.y() * segment_count - si.prim_index;
             Float curve_v = Float(local_v + si.prim_index - first_segment_idx) /
                             Float(last_segment_idx - first_segment_idx + 1);
@@ -785,7 +789,7 @@ public:
                            (uint32_t) DiscontinuityFlags::PerimeterType,
                            (uint32_t) DiscontinuityFlags::Empty);
         } else if (has_flag(flags, DiscontinuityFlags::InteriorType)) {
-            size_t segment_count = dr::width(m_indices);
+            Float segment_count = m_seg_count_f;
             UInt32 segment_id = dr::floor2int<UInt32>(si.uv.y() * segment_count);
             Float v_local = si.uv.y() * segment_count - segment_id;
 
@@ -925,7 +929,7 @@ public:
         si.prim_index =
             dr::select(use_first, first_segment_idx, last_segment_idx);
         si.uv = Point2f(local_uv.x(),
-                        (local_uv.y() + si.prim_index) / dr::width(m_indices));
+                        (local_uv.y() + si.prim_index) / m_seg_count_f);
 
         uint32_t flags = (uint32_t) DiscontinuityFlags::PerimeterType;
         Mask perimeter = active & (sample1 == +DiscontinuityFlags::PerimeterType);
@@ -1025,7 +1029,7 @@ public:
             if (!follow_shape) {
                 // Let the curve parameter follow the sliding of the
                 // interaction point across the moving surface
-                Float v_global = (v_local + prim_idx) / dr::width(m_indices);
+                Float v_global = (v_local + prim_idx) / m_seg_count_f;
                 Vector3f dp_dv;
                 std::tie(std::ignore, dp_dv, std::ignore, std::ignore,
                          std::ignore, std::ignore, std::ignore) =
@@ -1036,7 +1040,7 @@ public:
                                dr::squared_norm(dp_dv);
                 v_global = dr::replace_grad(v_global, v_global + v_diff);
                 v_local  = dr::replace_grad(
-                    v_local, v_global * dr::width(m_indices) - prim_idx);
+                    v_local, v_global * m_seg_count_f - prim_idx);
 
                 // Recompute the center line with the correct motion
                 std::tie(c, dc_dv, dc_dvv, std::ignore, radius, dr_dv,
@@ -1071,7 +1075,7 @@ public:
             if constexpr (IsDiff)
                 u_att = dr::replace_grad(u, u_att);
 
-            Float v = (v_local + prim_idx) / dr::width(m_indices);
+            Float v = (v_local + prim_idx) / m_seg_count_f;
 
             si.uv = Point2f(u_att, v);
 
@@ -1221,9 +1225,9 @@ private:
         // Finally, these are then used in the Weingarten equations to get the
         // normal's partials.
         Float v_global = uv.y();
-        size_t segment_count = dr::width(m_indices);
+        Float segment_count = m_seg_count_f;
         UInt32 segment_idx = dr::floor2int<UInt32>(v_global * segment_count);
-        segment_idx = dr::clip(segment_idx, 0, (uint32_t) segment_count - 1);
+        segment_idx = dr::minimum(segment_idx, UInt32(segment_count) - 1u);
         Float v_local = v_global * segment_count - segment_idx;
 
         Point3f c;
@@ -1284,8 +1288,8 @@ private:
         dp_du *= dr::TwoPi<Float>;
         dp_duv *= dr::TwoPi<Float>;
         dp_duu *= dr::square(dr::TwoPi<Float>);
-        ScalarFloat ratio = (ScalarFloat) dr::width(m_indices),
-                    ratio2 = ratio * ratio;
+        Float ratio = m_seg_count_f,
+              ratio2 = ratio * ratio;
         dp_dv  *= ratio;
         dp_duv *= ratio;
         dp_dvv *= ratio2;
@@ -1333,9 +1337,13 @@ private:
     mutable UInt32Storage m_indices;
     mutable FloatStorage m_control_points;
 
+    /// Needs to be opaque to not get baked into the kernel
+    mutable Float m_seg_count_f;
+
     static constexpr float silhouette_offset = 5e-3f;
 
-    MI_TRAVERSE_CB(Base, m_curves_prim_idx, m_indices, m_control_points)
+    MI_TRAVERSE_CB(Base, m_curves_prim_idx, m_indices, m_control_points,
+                   m_seg_count_f)
 };
 
 MI_EXPORT_PLUGIN(BSplineCurve);
