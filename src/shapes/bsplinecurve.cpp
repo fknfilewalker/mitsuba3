@@ -365,9 +365,9 @@ public:
             );
         }
 
-        /* Bake `to_world` into the positions, leaving the radii alone. The
-           write is in place: Dr.Jit copies the buffer first if the caller of
-           the memory path still holds on to it. */
+        // Bake ``to_world`` into the positions, leaving the radii alone. The
+        // write is in place: Dr.Jit copies the buffer first if the caller of
+        // the memory path still holds on to it.
         const ScalarAffineTransform4f &to_world = m_to_world.scalar();
         if (!(to_world == ScalarAffineTransform4f())) {
             if constexpr (dr::is_jit_v<Float>) {
@@ -401,8 +401,8 @@ public:
         if (indices.empty())
             Throw("No B-spline segments were specified!");
 
-        /* The segments of a curve have consecutive indices: a new curve starts
-           wherever that ordering breaks */
+        // The segments of a curve have consecutive indices: a new curve starts
+        // wherever that ordering breaks
         std::vector<ScalarIndex> curves_1st_prim_idx;
         for (size_t i = 0; i < indices.size(); ++i) {
             if ((size_t) indices[i] + 4 > (size_t) m_control_point_count)

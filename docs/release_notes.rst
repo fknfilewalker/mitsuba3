@@ -166,6 +166,13 @@ Mitsuba 3.10.0
     ``mesh.has_flipped_normals()``               *removed, see above*
     ============================================ ==============================
 
+- **B-spline curves from memory**. The :ref:`bsplinecurve <shape-bsplinecurve>`
+  shape can now be constructed from a ``control_points`` buffer instead of a
+  ``filename``. It accepts a Dr.Jit array or tensor holding four values per
+  control point (position and radius), either flat or with the shape ``(N, 4)``.
+  The optional ``segment_indices`` buffer lists the first control point of every
+  segment; without it, all control points form a single curve.
+
 Mitsuba 3.9.1
 -------------
 *August 7, 2026*
