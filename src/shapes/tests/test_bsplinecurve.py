@@ -563,3 +563,145 @@ def test21_shape_type(variant_scalar_rgb):
         "filename" : "resources/data/common/meshes/curve.txt",
     })
     assert curve.shape_type() == mi.ShapeType.BSplineCurve.value;
+
+
+# The control points of 'resources/data/common/meshes/curve.txt'
+CURVE_CONTROL_POINTS = [
+    -1.0, 0, 0, 1,
+    -0.3, 0, 0, 1,
+     0.3, 0, 0, 1,
+     1.0, 0, 0, 1,
+]
+
+def float_buffer(values):
+    """A flat float buffer of the type the current variant expects"""
+    if mi.variant().startswith('scalar'):
+        from drjit.scalar import ArrayXf
+        return ArrayXf(values)
+    return mi.Float(values)
+
+def uint_buffer(values):
+    """A flat 32-bit unsigned integer buffer of the type the current variant expects"""
+    if mi.variant().startswith('scalar'):
+        from drjit.scalar import ArrayXu
+        return ArrayXu(values)
+    return mi.UInt32(values)
+
+
+@fresolver_append_path
+def test22_create_from_memory(variants_all_rgb):
+    # A curve loaded from memory must match the same curve loaded from a file
+    ref = mi.load_dict({
+        "type" : "bsplinecurve",
+        "filename" : "resources/data/common/meshes/curve.txt",
+    })
+    ref_control_points = mi.traverse(ref)['control_points']
+
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : float_buffer(CURVE_CONTROL_POINTS),
+    })
+
+    assert s.primitive_count() == ref.primitive_count()
+    assert dr.allclose(s.bbox().min, ref.bbox().min)
+    assert dr.allclose(s.bbox().max, ref.bbox().max)
+    assert dr.allclose(mi.traverse(s)['control_points'], ref_control_points)
+
+
+@fresolver_append_path
+def test23_create_from_memory_tensor(variants_all_rgb):
+    pytest.importorskip("numpy")
+    import numpy as np
+
+    # The buffer may also be given as a tensor of shape (N, 4)
+    control_points = np.array(CURVE_CONTROL_POINTS, dtype=np.float32).reshape((4, 4))
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : mi.TensorXf(control_points),
+    })
+
+    ref = mi.load_dict({
+        "type" : "bsplinecurve",
+        "filename" : "resources/data/common/meshes/curve.txt",
+    })
+
+    assert s.primitive_count() == ref.primitive_count()
+    assert dr.allclose(mi.traverse(s)['control_points'],
+                       mi.traverse(ref)['control_points'])
+
+
+@fresolver_append_path
+def test24_create_from_memory_to_world(variants_all_rgb):
+    # 'to_world' is baked into the positions, the radii are left alone
+    to_world = mi.ScalarTransform4f().translate([1.3, -3.0, 5]) @ \
+               mi.ScalarTransform4f().scale((2, 1, 1))
+
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : float_buffer(CURVE_CONTROL_POINTS),
+        "to_world" : to_world,
+    })
+    ref = mi.load_dict({
+        "type" : "bsplinecurve",
+        "filename" : "resources/data/common/meshes/curve.txt",
+        "to_world" : to_world,
+    })
+
+    assert dr.allclose(mi.traverse(s)['control_points'],
+                       mi.traverse(ref)['control_points'])
+    assert dr.allclose(s.bbox().min, ref.bbox().min)
+    assert dr.allclose(s.bbox().max, ref.bbox().max)
+
+
+@fresolver_append_path
+def test25_create_from_memory_segment_indices(variants_all_rgb):
+    # Two curves of four control points each, i.e. one segment per curve
+    control_points = float_buffer(CURVE_CONTROL_POINTS + CURVE_CONTROL_POINTS)
+
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : control_points,
+        "segment_indices" : uint_buffer([0, 4]),
+    })
+    assert s.primitive_count() == 2
+
+    # Without 'segment_indices' the control points describe a single curve,
+    # which spans as many segments as it has groups of four consecutive points
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : control_points,
+    })
+    assert s.primitive_count() == 5
+
+
+@fresolver_append_path
+def test26_create_from_memory_invalid(variants_all_rgb):
+    # 'filename' and 'control_points' are mutually exclusive
+    with pytest.raises(RuntimeError, match="Cannot specify both"):
+        mi.load_dict({
+            "type" : "bsplinecurve",
+            "filename" : "resources/data/common/meshes/curve.txt",
+            "control_points" : float_buffer(CURVE_CONTROL_POINTS),
+        })
+
+    # A segment needs four control points
+    with pytest.raises(RuntimeError, match="must hold at least four"):
+        mi.load_dict({
+            "type" : "bsplinecurve",
+            "control_points" : float_buffer(CURVE_CONTROL_POINTS[:12]),
+        })
+
+    # Every control point is given by four values
+    with pytest.raises(RuntimeError, match="must hold at least four"):
+        mi.load_dict({
+            "type" : "bsplinecurve",
+            "control_points" : float_buffer(CURVE_CONTROL_POINTS[:-1]),
+        })
+
+    # A segment index must leave room for four consecutive control points
+    with pytest.raises(RuntimeError, match="Segment 0 starts at control point 1"):
+        mi.load_dict({
+            "type" : "bsplinecurve",
+            "control_points" : float_buffer(CURVE_CONTROL_POINTS),
+            "segment_indices" : uint_buffer([1]),
+        })
