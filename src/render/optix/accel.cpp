@@ -128,14 +128,17 @@ static void optix_fill_build_input(OptixBuildInput &build_input,
             break;
 
         case ShapeIR::Kind::BSplineCurve:
+        case ShapeIR::Kind::CatmullRomCurve:
         case ShapeIR::Kind::LinearCurve:
             ptr_storage[0] = (void *) g.cp_ptr;
             ptr_storage[1] = (void *) ((const float *) g.cp_ptr + 3);
             build_input.type = OPTIX_BUILD_INPUT_TYPE_CURVES;
             build_input.curveArray.curveType            =
                 g.kind == ShapeIR::Kind::BSplineCurve
-                ? OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE
-                : OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR;
+                    ? OPTIX_PRIMITIVE_TYPE_ROUND_CUBIC_BSPLINE
+                : g.kind == ShapeIR::Kind::CatmullRomCurve
+                    ? OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM
+                    : OPTIX_PRIMITIVE_TYPE_ROUND_LINEAR;
             build_input.curveArray.numPrimitives        = (unsigned int) g.seg_count;
             build_input.curveArray.vertexBuffers        = (CUdeviceptr *) &ptr_storage[0];
             build_input.curveArray.numVertices          = (unsigned int) g.cp_count;

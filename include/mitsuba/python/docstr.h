@@ -9924,6 +9924,8 @@ static const char *__doc_mitsuba_ShapeType = R"doc(Shape type bit flags driving 
 
 static const char *__doc_mitsuba_ShapeType_BSplineCurve = R"doc(B-Spline curves (``bsplinecurve``))doc";
 
+static const char *__doc_mitsuba_ShapeType_CatmullRomCurve = R"doc(Catmull-Rom curves (``catmullromcurve``))doc";
+
 static const char *__doc_mitsuba_ShapeType_Cylinder = R"doc(Cylinders (``cylinder``))doc";
 
 static const char *__doc_mitsuba_ShapeType_Disk = R"doc(Disks (``disk``))doc";

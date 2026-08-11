@@ -24,6 +24,9 @@ struct ShapeIR {
         /// Cubic B-spline curve
         BSplineCurve,
 
+        /// Cubic Catmull-Rom curve
+        CatmullRomCurve,
+
         /// Linear curve
         LinearCurve,
 

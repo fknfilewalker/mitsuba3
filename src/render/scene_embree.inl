@@ -154,10 +154,13 @@ embree_make_geometry(RTCDevice device, const Shape<Float, Spectrum> *shape,
         }
 
         case ShapeIR::Kind::BSplineCurve:
+        case ShapeIR::Kind::CatmullRomCurve:
         case ShapeIR::Kind::LinearCurve: {
             RTCGeometry geom = rtcNewGeometry(
                 device, g.kind == ShapeIR::Kind::BSplineCurve
                             ? RTC_GEOMETRY_TYPE_ROUND_BSPLINE_CURVE
+                      : g.kind == ShapeIR::Kind::CatmullRomCurve
+                            ? RTC_GEOMETRY_TYPE_ROUND_CATMULL_ROM_CURVE
                             : RTC_GEOMETRY_TYPE_ROUND_LINEAR_CURVE);
             rtcSetSharedGeometryBuffer(geom, RTC_BUFFER_TYPE_VERTEX, 0,
                                        RTC_FORMAT_FLOAT4, g.cp_ptr, 0,

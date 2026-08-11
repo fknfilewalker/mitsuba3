@@ -41,9 +41,9 @@ struct MiOptixAccelData {
 /// Allocated once, refilled in place so the SBT records stay valid.
 using ShapeDataBuffers = std::vector<void *>;
 
-/// Number of ShapeType bit positions (the highest, ShapeGroup, is bit 11), which
+/// Number of ShapeType bit positions (the highest, ShapeGroup, is bit 12), which
 /// sizes the lookup table below. Only geometry types are ever stored or queried.
-#define MI_SHAPE_TYPE_NUM_BITS 12
+#define MI_SHAPE_TYPE_NUM_BITS 13
 
 /// Map a `ShapeType` to an OptiX program group index, keyed by the type's
 /// lowest set bit.

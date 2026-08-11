@@ -253,6 +253,7 @@ build_impl(const std::vector<BlasEntry> &blases,
             const BlasEntry &blas = blases[blas_idx];
             for (const ShapeIR &g : blas.geoms) {
                 if (g.kind == ShapeIR::Kind::BSplineCurve ||
+                    g.kind == ShapeIR::Kind::CatmullRomCurve ||
                     g.kind == ShapeIR::Kind::LinearCurve)
                     any_curves = true;
                 if (g.kind == ShapeIR::Kind::TrianglesCulled) {
@@ -392,6 +393,7 @@ build_impl(const std::vector<BlasEntry> &blases,
                     }
 
                     case ShapeIR::Kind::BSplineCurve:
+                    case ShapeIR::Kind::CatmullRomCurve:
                     case ShapeIR::Kind::LinearCurve: {
                         if (g.cp_count == 0 || g.seg_count == 0)
                             Throw("MetalAccel: curve geometry with zero "
@@ -426,11 +428,15 @@ build_impl(const std::vector<BlasEntry> &blases,
                         gd.indexBufferOffset        = ix_off;
                         gd.indexType                = MTLIndexTypeUInt32;
                         gd.segmentCount             = g.seg_count;
-                        bool bspline = g.kind == ShapeIR::Kind::BSplineCurve;
-                        gd.segmentControlPointCount = bspline ? 4 : 2;
-                        gd.curveBasis               = bspline
-                                                          ? MTLCurveBasisBSpline
-                                                          : MTLCurveBasisLinear;
+                        bool cubic = g.kind == ShapeIR::Kind::BSplineCurve ||
+                                     g.kind == ShapeIR::Kind::CatmullRomCurve;
+                        gd.segmentControlPointCount = cubic ? 4 : 2;
+                        gd.curveBasis =
+                            g.kind == ShapeIR::Kind::BSplineCurve
+                                ? MTLCurveBasisBSpline
+                            : g.kind == ShapeIR::Kind::CatmullRomCurve
+                                ? MTLCurveBasisCatmullRom
+                                : MTLCurveBasisLinear;
                         gd.curveType                = MTLCurveTypeRound;
                         gd.curveEndCaps             = MTLCurveEndCapsSphere;
                         gd.opaque                   = YES;

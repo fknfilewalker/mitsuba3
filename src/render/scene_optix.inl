@@ -55,7 +55,7 @@ struct MiOptixSceneState {
 };
 
 /// Maximum number of OptiX program groups that can be instantiated by any kernel
-#define MI_MAX_PROGRAM_GROUPS  8
+#define MI_MAX_PROGRAM_GROUPS  9
 
 
 /// Pipeline components (modules, program groups) for one set of shape-type
@@ -66,6 +66,7 @@ struct MiOptixConfig {
     OptixPipelineCompileOptions pipeline_compile_options;
     OptixModule main_module;
     OptixModule bspline_curve_module; /// Built-in module for B-spline curves
+    OptixModule catmullrom_curve_module; /// Built-in module for Catmull-Rom curves
     OptixModule linear_curve_module; /// Built-in module for linear curves
     OptixProgramGroup pg[MI_MAX_PROGRAM_GROUPS];
     OptixProgramGroupMapping pg_mapping;
@@ -146,6 +147,11 @@ const MiOptixConfig &init_optix_config(uint32_t shape_types, bool compact) {
         st &= ~ShapeType::BSplineCurve;
     }
 
+    if (st & ShapeType::CatmullRomCurve) {
+        prim_flags |= OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CATMULLROM;
+        st &= ~ShapeType::CatmullRomCurve;
+    }
+
     if (st & ShapeType::LinearCurve) {
         prim_flags |= OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_LINEAR;
         st &= ~ShapeType::LinearCurve;
@@ -190,6 +196,19 @@ const MiOptixConfig &init_optix_config(uint32_t shape_types, bool compact) {
             optixBuiltinISModuleGet(config.context, &module_compile_options,
                                     &config.pipeline_compile_options,
                                     &options, &config.bspline_curve_module));
+    }
+
+    if (prim_flags & OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_CATMULLROM) {
+        OptixBuiltinISOptions options = {};
+        options.builtinISModuleType   = OPTIX_PRIMITIVE_TYPE_ROUND_CATMULLROM;
+        options.usesMotionBlur        = false;
+        options.curveEndcapFlags      = 0;
+        // buildFlags must match the flags used in OptixAccelBuildOptions (optix/accel.cpp)
+        options.buildFlags            = accel_build_flags;
+        jit_optix_check(
+            optixBuiltinISModuleGet(config.context, &module_compile_options,
+                                    &config.pipeline_compile_options,
+                                    &options, &config.catmullrom_curve_module));
     }
 
     if (prim_flags & OPTIX_PRIMITIVE_TYPE_FLAGS_ROUND_LINEAR) {
@@ -267,6 +286,12 @@ const MiOptixConfig &init_optix_config(uint32_t shape_types, bool compact) {
         pgd[pg_count].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
         pgd[pg_count].hitgroup.moduleIS = config.bspline_curve_module;
         config.pg_mapping[ShapeType::BSplineCurve] = pg_count++;
+    }
+
+    if (shape_types & (uint32_t) ShapeType::CatmullRomCurve) {
+        pgd[pg_count].kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+        pgd[pg_count].hitgroup.moduleIS = config.catmullrom_curve_module;
+        config.pg_mapping[ShapeType::CatmullRomCurve] = pg_count++;
     }
 
     if (shape_types & (uint32_t) ShapeType::LinearCurve) {

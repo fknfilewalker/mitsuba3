@@ -25,6 +25,7 @@ MI_PY_EXPORT(DiscontinuityFlags) {
         .def_value(ShapeType, Mesh)
         .def_value(ShapeType, Rectangle)
         .def_value(ShapeType, BSplineCurve)
+        .def_value(ShapeType, CatmullRomCurve)
         .def_value(ShapeType, Cylinder)
         .def_value(ShapeType, Disk)
         .def_value(ShapeType, LinearCurve)

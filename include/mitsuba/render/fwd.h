@@ -60,29 +60,32 @@ enum class ShapeType : uint32_t {
     /// Linear curves (``linearcurve``)
     LinearCurve = 1u << 3,
 
+    /// Catmull-Rom curves (``catmullromcurve``)
+    CatmullRomCurve = 1u << 4,
+
     /// Cylinders (``cylinder``)
-    Cylinder = 1u << 4,
+    Cylinder = 1u << 5,
 
     /// Disks (``disk``)
-    Disk = 1u << 5,
+    Disk = 1u << 6,
 
     /// SDF Grids (``sdfgrid``)
-    SDFGrid = 1u << 6,
+    SDFGrid = 1u << 7,
 
     /// Spheres (``sphere``)
-    Sphere = 1u << 7,
+    Sphere = 1u << 8,
 
     /// Ellipsoids (``ellipsoids``)
-    Ellipsoids = 1u << 8,
+    Ellipsoids = 1u << 9,
 
     /// Ellipsoid meshes (``ellipsoidsmesh``)
-    EllipsoidsMesh = Mesh | (1u << 9), // Tagged with an extra bit
+    EllipsoidsMesh = Mesh | (1u << 10), // Tagged with an extra bit
 
     /// Instance (``instance``)
-    Instance = 1u << 10,
+    Instance = 1u << 11,
 
     /// ShapeGroup (``shapegroup``)
-    ShapeGroup = 1u << 11,
+    ShapeGroup = 1u << 12,
 
     /// Invalid for default initialization
     Invalid = 0
