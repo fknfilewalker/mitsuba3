@@ -43,7 +43,7 @@ B-spline curve (:monosp:`bsplinecurve`)
  * - to_world
    - |transform|
    - Specifies a linear object-to-world transformation. Note that the control
-     points' raddii are invariant to this transformation!
+     points' radii are invariant to this transformation!
 
  * - silhouette_sampling_weight
    - |float|
@@ -128,10 +128,11 @@ points and increasing radii::
         }
 
 The curves can also be passed in memory: :monosp:`control_points` takes a Dr.Jit
-array or tensor holding four values per control point (position, radius), either
-flat or with the shape ``(N, 4)``. The optional :monosp:`segment_indices`
-parameter lists the first control point of every segment; consecutive indices
-belong to the same curve. Without it, all control points describe a single curve.
+tensor holding four values per control point (position, radius), either flat or
+with the shape ``(N, 4)``. The optional :monosp:`segment_indices` parameter lists
+the first control point of every segment; consecutive indices belong to the same
+curve. Without it, all control points describe a single curve. Both parameters
+also accept flat Dr.Jit arrays such as ``mi.Float`` and ``mi.UInt32``.
 
 .. tabs::
     .. code-tab:: python
@@ -140,7 +141,7 @@ belong to the same curve. Without it, all control points describe a single curve
         'curves': {
             'type': 'bsplinecurve',
             'control_points': mi.TensorXf(control_points),  # shape (8, 4)
-            'segment_indices': mi.UInt32([0, 4])  # dr.scalar.ArrayXu in scalar variants
+            'segment_indices': mi.TensorXu([0, 4])
         }
 
 .. note:: The backfaces of curves are always culled. It is therefore impossible
@@ -182,7 +183,8 @@ public:
             ScopedPhase phase(ProfilerPhase::LoadGeometry);
             Timer timer;
 
-            // Four values per control point: (position, radius)
+            // Four values per control point: (position, radius). The storage
+            // is single precision, double precision inputs are converted.
             Any cp_any = props.get<Any>("control_points");
             if (const TensorXf *tensor = any_cast<TensorXf>(&cp_any)) {
                 size_t ndim = tensor->ndim();
@@ -192,6 +194,9 @@ public:
                 m_control_points = FloatStorage(tensor->array());
             } else if (const FloatStorage *buf = any_cast<FloatStorage>(&cp_any)) {
                 m_control_points = *buf;
+            } else if (const DynamicBuffer<Float> *buf_double =
+                           any_cast<DynamicBuffer<Float>>(&cp_any)) {
+                m_control_points = FloatStorage(*buf_double);
             } else {
                 Throw("The \"control_points\" property must be a Dr.Jit tensor "
                       "or array of floating point values (e.g. mi.TensorXf)!");

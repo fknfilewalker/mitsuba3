@@ -665,6 +665,14 @@ def test25_create_from_memory_segment_indices(variants_all_rgb):
     })
     assert s.primitive_count() == 2
 
+    # A tensor describes the same two curves
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : control_points,
+        "segment_indices" : mi.TensorXu([0, 4]),
+    })
+    assert s.primitive_count() == 2
+
     # Without 'segment_indices' the control points describe a single curve,
     # which spans as many segments as it has groups of four consecutive points
     s = mi.load_dict({
@@ -682,6 +690,21 @@ def test26_create_from_memory_invalid(variants_all_rgb):
             "type" : "bsplinecurve",
             "filename" : "resources/data/common/meshes/curve.txt",
             "control_points" : float_buffer(CURVE_CONTROL_POINTS),
+        })
+
+    # The control points hold floating point values
+    with pytest.raises(RuntimeError, match="must be a Dr.Jit tensor"):
+        mi.load_dict({
+            "type" : "bsplinecurve",
+            "control_points" : uint_buffer([0, 1, 2, 3]),
+        })
+
+    # The segment indices hold 32-bit unsigned integers
+    with pytest.raises(RuntimeError, match="must be a Dr.Jit tensor"):
+        mi.load_dict({
+            "type" : "bsplinecurve",
+            "control_points" : float_buffer(CURVE_CONTROL_POINTS),
+            "segment_indices" : float_buffer([0, 4]),
         })
 
     # A segment needs four control points
@@ -705,3 +728,21 @@ def test26_create_from_memory_invalid(variants_all_rgb):
             "control_points" : float_buffer(CURVE_CONTROL_POINTS),
             "segment_indices" : uint_buffer([1]),
         })
+
+
+@fresolver_append_path
+def test27_create_from_memory_exposed_buffer(variants_all_rgb):
+    # The exposed control points are single precision even in double precision
+    # variants, and can be fed straight back into a new curve
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : float_buffer(CURVE_CONTROL_POINTS + CURVE_CONTROL_POINTS),
+        "segment_indices" : uint_buffer([0, 4]),
+    })
+
+    s = mi.load_dict({
+        "type" : "bsplinecurve",
+        "control_points" : mi.traverse(s)['control_points'],
+        "segment_indices" : mi.traverse(s)['segment_indices'],
+    })
+    assert s.primitive_count() == 2
