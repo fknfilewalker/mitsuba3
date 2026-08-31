@@ -62,7 +62,7 @@ MI_PY_EXPORT(SilhouetteSample) {
 MI_VARIANT class PyMesh : public Mesh<Float, Spectrum> {
 public:
     MI_IMPORT_TYPES(Mesh)
-    NB_TRAMPOLINE(Mesh, 1);
+    NB_TRAMPOLINE(Mesh);
 
     using IndexBuffer = typename Mesh::IndexBuffer;
 
@@ -80,8 +80,6 @@ public:
     std::string to_string() const override {
         NB_OVERRIDE(to_string);
     }
-
-    DR_TRAMPOLINE_TRAVERSE_CB(Mesh)
 };
 
 template <typename Ptr, typename Cls> void bind_shape_generic(Cls &cls) {
@@ -123,7 +121,7 @@ template <typename Ptr, typename Cls> void bind_shape_generic(Cls &cls) {
                const PreliminaryIntersection3f &pi, uint32_t ray_flags,
                Mask active) {
                 SurfaceInteraction3f si = shape->compute_surface_interaction(
-                    ray, pi, ray_flags, 0, active);
+                    ray, pi, ray_flags, active);
                 si.finalize_surface_interaction(pi, ray, ray_flags, active);
                 return si;
             },
@@ -503,6 +501,7 @@ MI_PY_EXPORT(Shape) {
         dr::ArrayBinding b;
         auto shape_ptr = dr::bind_array_t<ShapePtr>(b, m, "ShapePtr");
         bind_shape_generic<ShapePtr>(shape_ptr);
+        shape_ptr.freeze();
     }
 
     using PyMesh = PyMesh<Float, Spectrum>;
@@ -614,6 +613,7 @@ MI_PY_EXPORT(Shape) {
         dr::ArrayBinding b;
         auto mesh_ptr = dr::bind_array_t<MeshPtr>(b, m, "MeshPtr");
         bind_mesh_generic<MeshPtr>(mesh_ptr);
+        mesh_ptr.freeze();
     }
 
     drjit::bind_traverse(mesh_cls);

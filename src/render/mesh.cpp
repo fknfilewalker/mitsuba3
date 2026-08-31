@@ -30,7 +30,7 @@
 #endif
 
 NAMESPACE_BEGIN(mitsuba)
-NAMESPACE_BEGIN()
+namespace {
 
 // ---------------------------------------------------------------------------
 // Helpers to unify JIT and scalar code paths in several Mesh functions
@@ -160,7 +160,7 @@ static IndexBuffer build_rep(const IndexBuffer &map, size_t groups) {
     return rep;
 }
 
-NAMESPACE_END()
+}
 
 MI_VARIANT Mesh<Float, Spectrum>::Mesh(const Properties &props) : Base(props) {
     // Use per-face instead of per-vertex normals? This will give a faceted appearance.
@@ -792,9 +792,10 @@ void Mesh<Float, Spectrum>::refresh(const ScalarBoundingBox3f *bbox) {
     else
         recompute_bbox();
 
-    // Eagerly build sampling tables for emitters/sensors
+    // Eagerly build sampling tables for emitters/sensors, and keep existing ones
+    bool needs_pmf = m_emitter || m_sensor || !m_area_pmf.empty();
     m_area_pmf = DiscreteDistribution<Float>();
-    if (m_emitter || m_sensor)
+    if (needs_pmf)
         build_pmf();
 
     m_parameterization = nullptr;
@@ -1360,6 +1361,8 @@ MI_VARIANT void Mesh<Float, Spectrum>::build_pmf() {
     if (m_face_count == 0)
         Throw("Cannot create sampling table for an empty mesh: %s", to_string());
 
+    dr::scoped_eval_scope<Float> guard;
+
     DynamicBuffer<Float> area = interleaved<1, DynamicBuffer<Float>>(
         m_face_count, [&](const UInt32 &f) {
             Vector3u fi = face_indices(f);
@@ -1752,7 +1755,7 @@ Mesh<Float, Spectrum>::eval_parameterization(const Point2f &uv,
         return dr::zeros<SurfaceInteraction3f>();
 
     SurfaceInteraction3f si =
-        compute_surface_interaction(ray, pi, ray_flags, 0, active);
+        compute_surface_interaction(ray, pi, ray_flags, active);
     si.finalize_surface_interaction(pi, ray, ray_flags, active);
 
     return si;
@@ -2274,15 +2277,10 @@ MI_VARIANT typename Mesh<Float, Spectrum>::SurfaceInteraction3f
 Mesh<Float, Spectrum>::compute_surface_interaction(const Ray3f &ray,
                                                    const PreliminaryIntersection3f &pi,
                                                    uint32_t ray_flags,
-                                                   uint32_t recursion_depth,
                                                    Mask active) const {
     MI_MASK_ARGUMENT(active);
 
     SurfaceInteraction3f si = dr::zeros<SurfaceInteraction3f>();
-
-    // Early exit when tracing isn't necessary
-    if (!m_is_instance && recursion_depth > 0)
-        return si;
 
     constexpr bool IsDiff = dr::is_diff_v<Float>;
     bool detach  = IsDiff && has_flag(ray_flags, RayFlags::DetachShape),
@@ -2463,7 +2461,7 @@ Mesh<Float, Spectrum>::compute_surface_interaction(const Ray3f &ray,
 
     si.prim_index = pi.prim_index;
     si.shape    = this;
-    si.instance = nullptr;
+    si.instance_index = 0;
 
     return si;
 }

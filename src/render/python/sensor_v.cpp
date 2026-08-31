@@ -14,7 +14,7 @@
 MI_VARIANT class PySensor : public Sensor<Float, Spectrum> {
 public:
     MI_IMPORT_TYPES(Sensor)
-    NB_TRAMPOLINE(Sensor, 13);
+    NB_TRAMPOLINE(Sensor);
 
     PySensor(const Properties &props) : Sensor(props) { }
 
@@ -95,8 +95,6 @@ public:
     using Sensor::m_needs_sample_3;
     using Sensor::m_film;
     using Sensor::m_to_world;
-
-    DR_TRAMPOLINE_TRAVERSE_CB(Sensor)
 };
 
 template <typename Ptr, typename Cls> void bind_sensor_generic(Cls &cls) {
@@ -176,6 +174,9 @@ MI_PY_EXPORT(Sensor) {
         .def_method(Sensor, shutter_open_time)
         .def_method(Sensor, needs_aperture_sample)
         .def("film", nb::overload_cast<>(&Sensor::film, nb::const_), D(Sensor, film))
+        .def("set_film", &Sensor::set_film, D(Sensor, set_film), "film"_a)
+        .def("set_world_transform", &Sensor::set_world_transform,
+             D(Sensor, set_world_transform), "to_world"_a)
         .def("sampler", nb::overload_cast<>(&Sensor::sampler, nb::const_), D(Sensor, sampler))
         .def_field(PySensor, m_needs_sample_2, D(Endpoint, m_needs_sample_3))
         .def_field(PySensor, m_needs_sample_3, D(Endpoint, m_needs_sample_3))
@@ -190,6 +191,7 @@ MI_PY_EXPORT(Sensor) {
         dr::ArrayBinding b;
         auto sensor_ptr = dr::bind_array_t<SensorPtr>(b, m, "SensorPtr");
         bind_sensor_generic<SensorPtr>(sensor_ptr);
+        sensor_ptr.freeze();
     }
 
 

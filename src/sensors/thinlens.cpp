@@ -178,10 +178,10 @@ public:
 
     void parameters_changed(const std::vector<std::string> &keys) override {
         Base::parameters_changed(keys);
+
         if (keys.empty() || string::contains(keys, "to_world")) {
             if (m_to_world.scalar().has_scale())
                 Throw("Scale factors in the camera-to-world transformation are not allowed!");
-            m_to_world = m_to_world.value().update();
         }
 
         update_camera_transforms();
@@ -385,6 +385,9 @@ private:
     Float m_normalization;
     Float m_x_fov;
     Vector3f m_dx, m_dy;
+
+    MI_TRAVERSE_CB(Base, m_sample_to_camera, m_image_rect, m_aperture_radius,
+                   m_normalization, m_x_fov, m_dx, m_dy)
 };
 
 MI_EXPORT_PLUGIN(ThinLensCamera)

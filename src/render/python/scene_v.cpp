@@ -35,7 +35,8 @@ static void register_typed_plugin(std::string_view name, nb::handle constructor,
 
     auto release = [](void *payload) {
         nb::gil_scoped_acquire gil;
-        nb::handle((PyObject *) payload).dec_ref();
+        if (gil.is_valid())
+            nb::handle((PyObject *) payload).dec_ref();
     };
 
     PluginManager::instance()->register_plugin(
@@ -64,6 +65,12 @@ MI_PY_EXPORT(Scene) {
              nb::overload_cast<const Ray3f &, uint32_t, Mask, bool, UInt32, uint32_t, Mask>(&Scene::ray_intersect, nb::const_),
              "ray"_a, "ray_flags"_a, "coherent"_a, "reorder"_a = false,
              "reorder_hint"_a = 0, "reorder_hint_bits"_a = 0, "active"_a = true, D(Scene, ray_intersect, 3))
+        .def("compute_surface_interaction",
+             &Scene::compute_surface_interaction, "ray"_a, "pi"_a,
+             "ray_flags"_a = +RayFlags::Default, "active"_a = true,
+             D(Scene, compute_surface_interaction))
+        .def("instance", &Scene::instance, "index"_a,
+             nb::rv_policy::reference_internal, D(Scene, instance))
         .def("ray_test",
              nb::overload_cast<const Ray3f &, Mask>(&Scene::ray_test, nb::const_),
              "ray"_a, "active"_a = true, D(Scene, ray_test))
@@ -100,16 +107,16 @@ MI_PY_EXPORT(Scene) {
         .def_method(Scene, bbox)
         .def("sensors",
              [](const Scene &scene) {
-                 nb::list result;
+                 nb::list_builder result(scene.sensors().size());
                  for (const Sensor *s : scene.sensors()) {
                      const ProjectiveCamera *p =
                          dynamic_cast<const ProjectiveCamera *>(s);
                      if (p)
-                         result.append(nb::cast(ref<const ProjectiveCamera>(p)));
+                         result.put(nb::cast(ref<const ProjectiveCamera>(p)));
                      else
-                         result.append(nb::cast(ref<const Sensor>(s)));
+                         result.put(nb::cast(ref<const Sensor>(s)));
                  }
-                 return result;
+                 return result.commit();
              },
              D(Scene, sensors))
         .def("sensors_dr", &Scene::sensors_dr, D(Scene, sensors_dr))
@@ -118,29 +125,29 @@ MI_PY_EXPORT(Scene) {
         .def_method(Scene, environment)
         .def("shapes",
              [](const Scene &scene) {
-                 nb::list result;
+                 nb::list_builder result(scene.shapes().size());
                  for (const Shape *s : scene.shapes()) {
                      const Mesh *m = dynamic_cast<const Mesh *>(s);
                      if (m)
-                         result.append(nb::cast(m));
+                         result.put(nb::cast(m));
                      else
-                         result.append(nb::cast(s));
+                         result.put(nb::cast(s));
                  }
-                 return result;
+                 return result.commit();
              },
              D(Scene, shapes))
         .def("shapes_dr", &Scene::shapes_dr, D(Scene, shapes_dr))
         .def("silhouette_shapes",
              [](const Scene &scene) {
-                 nb::list result;
+                 nb::list_builder result(scene.silhouette_shapes().size());
                  for (const Shape *s : scene.silhouette_shapes()) {
                      const Mesh *m = dynamic_cast<const Mesh *>(s);
                      if (m)
-                         result.append(nb::cast(m));
+                         result.put(nb::cast(m));
                      else
-                         result.append(nb::cast(s));
+                         result.put(nb::cast(s));
                  }
-                 return result;
+                 return result.commit();
              },
              D(Scene, silhouette_shapes))
         .def("integrator",
